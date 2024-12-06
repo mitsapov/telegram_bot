@@ -1,144 +1,142 @@
-from the_structure_of_the_quiz import *
-from  creating_database import *
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters.command import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
-# Включаем логирование, чтобы не пропустить важные сообщения
+# We turn on logging so as not to miss important messages
 logging.basicConfig(level=logging.INFO)
 
 API_TOKEN = ''
 
-# Объект бота
+# Bot Object
 bot = Bot(token=API_TOKEN)
-# Диспетчер
+
 dp = Dispatcher()
 
-# Хэндлер на команду /start
+# Handler for the team /start
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    # Создаем сборщика клавиатур типа Reply
+    # Creating a keyboard collector of the type Reply
     builder = ReplyKeyboardBuilder()
-    # Добавляем в сборщик одну кнопку
-    builder.add(types.KeyboardButton(text="Начать игру"))
-    # Прикрепляем кнопки к сообщению
-    await message.answer("Добро пожаловать в квиз!", reply_markup=builder.as_markup(resize_keyboard=True))
+    # Adding one button to the collector
+    builder.add(types.KeyboardButton(text="Start the game"))
+    # Attaching the buttons to the message
+    await message.answer("Welcome to the quiz!", reply_markup=builder.as_markup(resize_keyboard=True))
 
-# Хэндлер на команды /quiz
-@dp.message(F.text=="Начать игру")
+# Handler for commands /quiz
+@dp.message(F.text=="Start the game")
 @dp.message(Command("quiz"))
 async def cmd_quiz(message: types.Message):
-    # Отправляем новое сообщение без кнопок
-    await message.answer(f"Давайте начнем квиз!")
-    # Запускаем новый квиз
+    # Sending a new message without buttons
+    await message.answer(f"Let's start the quiz!")
+    # Launching a new quiz
     await new_quiz(message)
 
 def generate_options_keyboard(answer_options, right_answer):
-    # Создаем сборщика клавиатур типа Inline
+   # Creating a keyboard collector of the type Inline
     builder = InlineKeyboardBuilder()
 
-    # В цикле создаем 4 Inline кнопки, а точнее Callback-кнопки
+    # In the loop, we create 4 Inline buttons, or rather Callback buttons
     for option in answer_options:
         builder.add(types.InlineKeyboardButton(
-            # Текст на кнопках соответствует вариантам ответов
+            # The text on the buttons corresponds to the answer options
             text=option,
-            # Присваиваем данные для колбэк запроса.
-            # Если ответ верный сформируется колбэк-запрос с данными 'right_answer'
-            # Если ответ неверный сформируется колбэк-запрос с данными 'wrong_answer'
+            # Assigning the data for the callback request
+            # If the answer is correct, a callback request with data will be generated 'right_answer'
+            # If the answer is incorrect, a callback request with data will be generated 'wrong_answer'
             callback_data="right_answer" if option == right_answer else "wrong_answer")
         )
 
-    # Выводим по одной кнопке в столбик
+    # We output one button per column
     builder.adjust(1)
     return builder.as_markup()
 
 async def get_question(message, user_id):
 
-    # Запрашиваем из базы текущий индекс для вопроса
+    # We request the current index for the question from the database
     current_question_index = await get_quiz_index(user_id)
-    # Получаем индекс правильного ответа для текущего вопроса
+    # We get the index of the correct answer for the current question
     correct_index = quiz_data[current_question_index]['correct_option']
-    # Получаем список вариантов ответа для текущего вопроса
+    # We get a list of possible answers for the current question
     opts = quiz_data[current_question_index]['options']
 
-    # Функция генерации кнопок для текущего вопроса квиза
-    # В качестве аргументов передаем варианты ответов и значение правильного ответа (не индекс!)
+    # Button generation function for the current quiz question
+    # As arguments, we pass the answer options and the value of the correct answer (not the index!)
     kb = generate_options_keyboard(opts, opts[correct_index])
-    # Отправляем в чат сообщение с вопросом, прикрепляем сгенерированные кнопки
+    # We send a message with a question to the chat, attach the generated buttons
     await message.answer(f"{quiz_data[current_question_index]['question']}", reply_markup=kb)
 
 async def new_quiz(message):
-    # получаем id пользователя, отправившего сообщение
+    # we get the ID of the user who sent the message
     user_id = message.from_user.id
-    # сбрасываем значение текущего индекса вопроса квиза в 0
+    # reset the value of the current index of the quiz question to 0
     current_question_index = 0
     await update_quiz_index(user_id, current_question_index)
 
-    # запрашиваем новый вопрос для квиза
+    # requesting a new question for the quiz
     await get_question(message, user_id)
 
 @dp.callback_query(F.data == "right_answer")
 async def right_answer(callback: types.CallbackQuery):
-    # редактируем текущее сообщение с целью убрать кнопки (reply_markup=None)
+    # Editing the current message in order to remove the buttons (reply_markup=None)
     await callback.bot.edit_message_reply_markup(
         chat_id=callback.from_user.id,
         message_id=callback.message.message_id,
         reply_markup=None
     )
 
-    # Получение текущего вопроса для данного пользователя
+    # Getting the current question for this user
     current_question_index = await get_quiz_index(callback.from_user.id)
 
-    # Отправляем в чат сообщение, что ответ верный
-    await callback.message.answer("Верно!")
+    # We send a message to the chat that the answer is correct
+    await callback.message.answer("Right!")
 
-    # Обновление номера текущего вопроса в базе данных
+    # Updating the number of the current question in the database
     current_question_index += 1
     await update_quiz_index(callback.from_user.id, current_question_index)
 
-    # Проверяем достигнут ли конец квиза
+    # Checking if the end of the quiz has been reached
     if current_question_index < len(quiz_data):
-        # Следующий вопрос
+        # Next question
         await get_question(callback.message, callback.from_user.id)
     else:
-        # Уведомление об окончании квиза
-        await callback.message.answer("Это был последний вопрос. Квиз завершен!")
+        # Notification of the end of the quiz
+        await callback.message.answer("That was the last question. The quiz is completed!")
 
 @dp.callback_query(F.data == "wrong_answer")
 async def wrong_answer(callback: types.CallbackQuery):
-    # редактируем текущее сообщение с целью убрать кнопки (reply_markup=None)
+    # editing the current message in order to remove the buttons (reply_markup=None)
     await callback.bot.edit_message_reply_markup(
         chat_id=callback.from_user.id,
         message_id=callback.message.message_id,
         reply_markup=None
     )
 
-    # Получение текущего вопроса для данного пользователя
+    # Getting the current question for this user
     current_question_index = await get_quiz_index(callback.from_user.id)
 
     correct_option = quiz_data[current_question_index]['correct_option']
 
-    # Отправляем в чат сообщение об ошибке с указанием верного ответа
-    await callback.message.answer(f"Неправильно. Правильный ответ: {quiz_data[current_question_index]['options'][correct_option]}")
+    # We send an error message to the chat with the correct answer
+    await callback.message.answer(f"Wrong. Right answer: {quiz_data[current_question_index]['options'][correct_option]}")
 
-    # Обновление номера текущего вопроса в базе данных
+    # Updating the number of the current question in the database
     current_question_index += 1
     await update_quiz_index(callback.from_user.id, current_question_index)
 
-    # Проверяем достигнут ли конец квиза
+    # Checking if the end of the quiz has been reached
     if current_question_index < len(quiz_data):
-        # Следующий вопрос
+        # Next question
         await get_question(callback.message, callback.from_user.id)
     else:
-        # Уведомление об окончании квиза
-        await callback.message.answer("Это был последний вопрос. Квиз завершен!")
+        # Notification of the end of the quiz
+        await callback.message.answer("That was the last question. The quiz is completed!")
 
-#Запускаем процесс
+#Starting the process
 async def main():
 
-    # Запускаем создание таблицы базы данных
+    # Starting the creation of the database table
     await create_table()
     await dp.start_polling(bot)
 
