@@ -34,7 +34,7 @@ async def cmd_quiz(message: types.Message):
     await new_quiz(message)
 
 def generate_options_keyboard(answer_options, right_answer):
-   # Creating a keyboard collector of the type Inline
+    # Creating a keyboard collector of the type Inline
     builder = InlineKeyboardBuilder()
 
     # In the loop, we create 4 Inline buttons, or rather Callback buttons
