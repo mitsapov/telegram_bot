@@ -1,4 +1,9 @@
 import aiosqlite
+#service.py
+from  database import pool, execute_update_query, execute_select_query
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+from aiogram import types
+from database import quiz_data
 
 # Зададим имя базы данных
 DB_NAME = 'quiz_bot.db'
@@ -56,60 +61,66 @@ quiz_data = [
     }
 ]
 
-async def create_table():
-    # Создаем соединение с базой данных (если она не существует, то она будет создана)
-    async with aiosqlite.connect('quiz_bot.db') as db:
-        # Выполняем SQL-запрос к базе данных
-        await db.execute('''CREATE TABLE IF NOT EXISTS quiz_state (
-            user_id INTEGER PRIMARY KEY,
-            question_index INTEGER,
-            right_answers INTEGER
-        )''')
-        # Сохраняем изменения
-        await db.commit()
+def generate_options_keyboard(answer_options, right_answer):
+    builder = InlineKeyboardBuilder()
 
-async def update_quiz_index(user_id, index):
-    # Создаем соединение с базой данных (если она не существует, она будет создана)
-    async with aiosqlite.connect(DB_NAME) as db:
-        # Вставляем новую запись или заменяем ее, если с данным user_id уже существует
-        await db.execute('INSERT OR REPLACE INTO quiz_state (user_id, question_index, right_answers) VALUES (?, ?, ?)', (user_id, index, 0))
-        # Сохраняем изменения
-        await db.commit()
+    for option in answer_options:
+        builder.add(types.InlineKeyboardButton(
+            text=option,
+            callback_data="right_answer" if option == right_answer else "wrong_answer")
+        )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+
+async def get_question(message, user_id):
+
+    # Получение текущего вопроса из словаря состояний пользователя
+    current_question_index = await get_quiz_index(user_id)
+    correct_index = quiz_data[current_question_index]['correct_option']
+    opts = quiz_data[current_question_index]['options']
+    kb = generate_options_keyboard(opts, opts[correct_index])
+    await message.answer(f"{quiz_data[current_question_index]['question']}", reply_markup=kb)
+
+
+async def new_quiz(message):
+    user_id = message.from_user.id
+    current_question_index = 0
+    await update_quiz_index(user_id, current_question_index)
+    await get_question(message, user_id)
+
 
 async def get_quiz_index(user_id):
-    # Подключаемся к базе данных
-    async with aiosqlite.connect(DB_NAME) as db:
-        # Получаем запись для заданного пользователя
-        async with db.execute('SELECT question_index FROM quiz_state WHERE user_id = (?)', (user_id, )) as cursor:
-            # Возвращаем результат
-            results = await cursor.fetchone()
-            if results is not None:
-                return results[0]
-            else:
-                return 0
+    get_user_index = f"""
+        DECLARE $user_id AS Uint64;
 
-async def delete_previous_result(user_id):
-    # Подключаемся к базе данных
-    async with aiosqlite.connect(DB_NAME) as db:
-        # Удаляем предыдущую запись для данного пользователя
-        await db.execute('DELETE FROM quiz_state WHERE user_id = ?', (user_id, ))
-        # Сохраняем изменения
-        await db.commit()
+        SELECT question_index
+        FROM `quiz_state`
+        WHERE user_id == $user_id;
+    """
+    results = execute_select_query(pool, get_user_index, user_id=user_id)
 
-async def update_right_answers(user_id, right_answers):
-    # Подключаемся к базе данных
-    async with aiosqlite.connect(DB_NAME) as db:
-        # Обновляем количество правильных ответов
-        await db.execute('UPDATE quiz_state SET right_answers = ? WHERE user_id = ?', (right_answers, user_id))
-        # Сохраняем изменения
-        await db.commit()
+    if len(results) == 0:
+        return 0
+    if results[0]["question_index"] is None:
+        return 0
+    return results[0]["question_index"]
 
-# Получение количества правильных ответов для данного пользователя
-async def get_result(user_id):
-    async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute('SELECT right_answers FROM quiz_state WHERE user_id = (?)', (user_id, )) as cursor:
-            results = await cursor.fetchone()
-            if results is not None:
-                return results[0]
-            else:
-                return 0
+
+async def update_quiz_index(user_id, question_index):
+    set_quiz_state = f"""
+        DECLARE $user_id AS Uint64;
+        DECLARE $question_index AS Uint64;
+
+        UPSERT INTO `quiz_state` (`user_id`, `question_index`)
+        VALUES ($user_id, $question_index);
+    """
+
+    execute_update_query(
+        pool,
+        set_quiz_state,
+        user_id=user_id,
+        question_index=question_index,
+    )
