@@ -1,7 +1,7 @@
 import aiosqlite
 
 # Let's set the name of the database
-DB_NAME = 'db'
+DB_NAME = '.db'
 
 async def create_table():
     # Creating a connection to the database (if it does not exist, it will be created)
