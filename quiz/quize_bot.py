@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 # We turn on logging so as not to miss important messages
 logging.basicConfig(level=logging.INFO)
 
-API_TOKEN = 'API_TOKEN_BOT'
+API_TOKEN = 'YOUR_BOT_TOKEN'
 
 # Bot Object
 bot = Bot(token=API_TOKEN)
