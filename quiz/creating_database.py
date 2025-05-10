@@ -78,5 +78,5 @@ async def get_top_participants():
         if not participant_list:
             return "The participant rating is empty. No one has passed the quiz yet."
         
-        # Возвращаем отформатированный список
+        # Returning the formatted list
         return "Top 5 participants:\n" + "\n".join(participant_list)
